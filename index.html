@@ -539,6 +539,21 @@
     return seconds >= 0 ? seconds : null;
   }
 
+  function autoFormatTimeField(el) {
+    var digits = el.value.replace(/\D/g, '').slice(0, 6);
+    var formatted = digits;
+    if (digits.length > 2) {
+      var secs = digits.slice(-2);
+      var rest = digits.slice(0, -2);
+      if (rest.length > 2) {
+        formatted = rest.slice(0, -2) + ':' + rest.slice(-2) + ':' + secs;
+      } else {
+        formatted = rest + ':' + secs;
+      }
+    }
+    if (el.value !== formatted) el.value = formatted;
+  }
+
   function formatSecondsAsClock(totalSeconds) {
     totalSeconds = Math.round(totalSeconds);
     var h = Math.floor(totalSeconds / 3600);
@@ -814,8 +829,13 @@
     });
   });
 
-  [els.distance, els.time, els.pace].forEach(function (input) {
-    input.addEventListener('input', calculate);
+  els.distance.addEventListener('input', calculate);
+
+  [els.time, els.pace].forEach(function (input) {
+    input.addEventListener('input', function () {
+      autoFormatTimeField(input);
+      calculate();
+    });
   });
 
   els.saveBtn.addEventListener('click', function () {
@@ -844,7 +864,14 @@
     });
   });
 
-  [els.wPace, els.wThreshold, els.wTemp, els.wSecond].forEach(function (input) {
+  [els.wPace, els.wThreshold].forEach(function (input) {
+    input.addEventListener('input', function () {
+      autoFormatTimeField(input);
+      calculateWeather();
+    });
+  });
+
+  [els.wTemp, els.wSecond].forEach(function (input) {
     input.addEventListener('input', calculateWeather);
   });
 
