@@ -315,6 +315,72 @@
     text-align: center;
     padding: 12px 0;
   }
+  textarea.workout-textarea {
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 1rem;
+    color: var(--text);
+    font-family: inherit;
+    outline: none;
+    resize: vertical;
+    transition: border-color 0.15s;
+  }
+  textarea.workout-textarea:focus {
+    border-color: var(--accent);
+  }
+  textarea.workout-syntax-textarea {
+    font-family: "SF Mono", "Menlo", "Consolas", monospace;
+    font-size: 0.85rem;
+    white-space: pre;
+  }
+  .step-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .step-card .step-type {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 4px;
+  }
+  .step-card .step-fields {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .step-card .step-fields input {
+    width: auto;
+    flex: 1 1 100px;
+    padding: 8px 10px;
+    font-size: 0.9rem;
+  }
+  .step-card .delete-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 6px;
+  }
+  .warning-line {
+    font-size: 0.8rem;
+    color: var(--danger);
+    margin-bottom: 8px;
+  }
 </style>
 </head>
 <body>
@@ -327,6 +393,7 @@
     <div class="tab" data-solve="time">Time</div>
     <div class="tab" data-solve="distance">Distance</div>
     <div class="tab" data-solve="weather">Weather</div>
+    <div class="tab" data-solve="workout">Workout</div>
   </div>
 
   <div class="card">
@@ -431,6 +498,55 @@
 
       <div class="error" id="w-error"></div>
     </div>
+
+    <div id="workout-panel" style="display:none">
+      <p class="hint" style="margin-bottom:16px">Describe a workout in plain English, review the structured breakdown, then send it to intervals.icu — it'll sync to your Garmin/COROS watch if you've linked one there.</p>
+
+      <div class="field">
+        <label for="workout-input">Workout description</label>
+        <textarea id="workout-input" class="workout-textarea" rows="3" placeholder="e.g. 10 min warmup, 6x800m at 3:15/km with 2 min jog recovery, 10 min cooldown"></textarea>
+      </div>
+      <button class="save-btn" id="workout-parse-btn" type="button" style="margin-top:0;margin-bottom:16px">Parse</button>
+
+      <div id="workout-warnings"></div>
+
+      <div id="workout-steps"></div>
+
+      <div class="field" id="workout-syntax-field" style="display:none">
+        <label for="workout-syntax">Generated intervals.icu syntax</label>
+        <textarea id="workout-syntax" class="workout-textarea workout-syntax-textarea" rows="6"></textarea>
+        <div class="hint">Editable — this exact text is what gets sent.</div>
+      </div>
+
+      <div class="field" id="workout-send-fields" style="display:none">
+        <label for="workout-name">Workout name</label>
+        <input type="text" id="workout-name" placeholder="e.g. 6x800m Intervals">
+      </div>
+
+      <div class="field" id="workout-date-field" style="display:none">
+        <label>Send for</label>
+        <div class="pill-toggle" id="workout-date-toggle">
+          <button class="pill-btn active" data-when="today">Today</button>
+          <button class="pill-btn" data-when="tomorrow">Tomorrow</button>
+          <button class="pill-btn" data-when="custom">Pick date</button>
+        </div>
+        <input type="date" id="workout-date-custom" style="display:none;margin-top:10px">
+      </div>
+
+      <div class="field" id="workout-key-field" style="display:none">
+        <label for="workout-api-key">intervals.icu API key</label>
+        <div class="search-row">
+          <input type="password" id="workout-api-key" placeholder="Paste your API key">
+          <button type="button" id="workout-key-toggle">Show</button>
+        </div>
+        <div class="hint">Find this in intervals.icu → Settings → Developer Settings.</div>
+      </div>
+
+      <button class="save-btn" id="workout-send-btn" type="button" style="display:none" disabled>Send to intervals.icu</button>
+
+      <div class="derived-hint" id="workout-status" style="text-align:center"></div>
+      <div class="error" id="workout-error"></div>
+    </div>
   </div>
 
   <div class="history">
@@ -448,7 +564,7 @@
   var MI_IN_KM = 1.609344;
   var MI_IN_M = 1609.344;
 
-  var state = { solve: 'pace', distUnit: 'mi', secondMode: 'humidity' };
+  var state = { solve: 'pace', distUnit: 'mi', secondMode: 'humidity', workoutEditMode: 'structured', workoutDateWhen: 'today', workoutStepsData: [] };
 
   var els = {
     tabs: document.querySelectorAll('.tab'),
@@ -491,7 +607,25 @@
     wLocateBtn: document.getElementById('w-locate-btn'),
     wLocateStatus: document.getElementById('w-locate-status'),
     wLocationSearch: document.getElementById('w-location-search'),
-    wLocationSearchBtn: document.getElementById('w-location-search-btn')
+    wLocationSearchBtn: document.getElementById('w-location-search-btn'),
+    workoutPanel: document.getElementById('workout-panel'),
+    workoutInput: document.getElementById('workout-input'),
+    workoutParseBtn: document.getElementById('workout-parse-btn'),
+    workoutWarnings: document.getElementById('workout-warnings'),
+    workoutSteps: document.getElementById('workout-steps'),
+    workoutSyntaxField: document.getElementById('workout-syntax-field'),
+    workoutSyntax: document.getElementById('workout-syntax'),
+    workoutSendFields: document.getElementById('workout-send-fields'),
+    workoutName: document.getElementById('workout-name'),
+    workoutDateField: document.getElementById('workout-date-field'),
+    workoutDateToggle: document.querySelectorAll('#workout-date-toggle .pill-btn'),
+    workoutDateCustom: document.getElementById('workout-date-custom'),
+    workoutKeyField: document.getElementById('workout-key-field'),
+    workoutApiKey: document.getElementById('workout-api-key'),
+    workoutKeyToggle: document.getElementById('workout-key-toggle'),
+    workoutSendBtn: document.getElementById('workout-send-btn'),
+    workoutStatus: document.getElementById('workout-status'),
+    workoutError: document.getElementById('workout-error')
   };
 
   var HISTORY_KEY = 'paceCalcHistory';
@@ -510,6 +644,8 @@
   }
 
   var history = loadHistory();
+
+  var ICU_KEY_KEY = 'intervalsIcuApiKey';
 
   function unitAbbrev(unit) {
     if (unit === 'mi') return 'mi';
@@ -850,15 +986,448 @@
     });
   }
 
+  // ---- Workout Builder ----
+
+  var EFFORT_RANGES = {
+    recovery: [55, 65], jog: [55, 65],
+    easy: [65, 75],
+    steady: [78, 85],
+    tempo: [90, 97], threshold: [90, 97],
+    hard: [100, 110], fast: [100, 110]
+  };
+
+  var UNIT_TO_SECONDS = {
+    hours: 3600, hour: 3600, hrs: 3600, hr: 3600, h: 3600,
+    minutes: 60, minute: 60, mins: 60, min: 60,
+    seconds: 1, second: 1, secs: 1, sec: 1, s: 1
+  };
+  var UNIT_TO_METERS = {
+    kilometers: 1000, kilometer: 1000, km: 1000,
+    miles: 1609.344, mile: 1609.344, mi: 1609.344,
+    meters: 1, meter: 1, metres: 1, metre: 1, m: 1
+  };
+
+  var QUANTITY_RE = /(\d+(?:\.\d+)?)\s*(hours|hour|hrs|hr|h|minutes|minute|mins|min|seconds|second|secs|sec|s|kilometers|kilometer|km|miles|mile|mi|meters|meter|metres|metre|m)\b/i;
+  var PACE_RE = /(\d{1,2}):(\d{2})\s*(?:\/|\bper\b)?\s*(km|kilometers?|mi|miles?)?\s*(?:pace)?/i;
+  var EFFORT_RE = /\b(recovery|jog|easy|steady|tempo|threshold|hard|fast)\b/i;
+
+  function extractQuantity(text) {
+    var m = QUANTITY_RE.exec(text);
+    if (!m) return null;
+    var value = parseFloat(m[1]);
+    var unit = m[2].toLowerCase();
+    if (UNIT_TO_SECONDS.hasOwnProperty(unit)) return { durationSec: value * UNIT_TO_SECONDS[unit] };
+    if (UNIT_TO_METERS.hasOwnProperty(unit)) return { distanceM: value * UNIT_TO_METERS[unit] };
+    return null;
+  }
+
+  function extractTarget(text) {
+    var m = PACE_RE.exec(text);
+    if (m) {
+      var paceSec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+      var unit = /^km|^kilometer/i.test(m[3] || '') ? 'km' : 'mi';
+      var cleaned = text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length);
+      return { target: { kind: 'pace', paceSec: paceSec, unit: unit }, cleaned: cleaned };
+    }
+    var e = EFFORT_RE.exec(text);
+    if (e) {
+      var range = EFFORT_RANGES[e[1].toLowerCase()];
+      var cleaned2 = text.slice(0, e.index) + ' ' + text.slice(e.index + e[0].length);
+      return { target: { kind: 'percent', min: range[0], max: range[1] }, cleaned: cleaned2 };
+    }
+    return { target: null, cleaned: text };
+  }
+
+  function parseTargetText(text) {
+    text = text.trim();
+    var pace = /^(\d{1,2}):(\d{2})\s*\/?\s*(km|mi)?/i.exec(text);
+    if (pace) return { kind: 'pace', paceSec: parseInt(pace[1], 10) * 60 + parseInt(pace[2], 10), unit: (pace[3] || 'mi').toLowerCase() };
+    var pct = /(\d+)\s*-\s*(\d+)\s*%/.exec(text);
+    if (pct) return { kind: 'percent', min: parseInt(pct[1], 10), max: parseInt(pct[2], 10) };
+    var single = /^(\d+)\s*%$/.exec(text);
+    if (single) { var v = parseInt(single[1], 10); return { kind: 'percent', min: v, max: v }; }
+    var effort = EFFORT_RE.exec(text);
+    if (effort) { var r = EFFORT_RANGES[effort[1].toLowerCase()]; return { kind: 'percent', min: r[0], max: r[1] }; }
+    return null;
+  }
+
+  function parseSingleStep(text, defaultEffort) {
+    var extracted = extractTarget(text);
+    var quantity = extractQuantity(extracted.cleaned);
+    var target = extracted.target || { kind: 'percent', min: EFFORT_RANGES[defaultEffort][0], max: EFFORT_RANGES[defaultEffort][1] };
+    return { quantity: quantity, target: target };
+  }
+
+  function classifyClauseType(text) {
+    if (/warm[\s-]?up/i.test(text)) return 'warmup';
+    if (/cool[\s-]?down/i.test(text)) return 'cooldown';
+    if (/^\s*\d+\s*x(?=[\s\d]|$)/i.test(text)) return 'repeat';
+    return 'step';
+  }
+
+  function parseClause(raw) {
+    var text = raw.trim();
+    if (!text) return null;
+    var type = classifyClauseType(text);
+
+    if (type === 'repeat') {
+      var repMatch = /^\s*(\d+)\s*x\s*(.*)$/i.exec(text);
+      var reps = parseInt(repMatch[1], 10);
+      var halves = repMatch[2].split(/\bwith\b/i);
+      var work = parseSingleStep(halves[0], 'easy');
+      if (!work.quantity) return { warning: raw };
+      var recovery = null;
+      if (halves[1]) {
+        var recoveryParsed = parseSingleStep(halves[1], 'recovery');
+        if (recoveryParsed.quantity) recovery = recoveryParsed;
+      }
+      return { type: 'repeat', reps: reps, work: work, recovery: recovery };
+    }
+
+    var parsed = parseSingleStep(text, 'easy');
+    if (!parsed.quantity) return { warning: raw };
+    parsed.type = type;
+    return parsed;
+  }
+
+  function tokenizeWorkoutText(text) {
+    return text.split(/,|\bthen\b|\n/i).map(function (s) { return s.trim(); }).filter(Boolean);
+  }
+
+  function parseWorkoutText(text) {
+    var clauses = tokenizeWorkoutText(text);
+    var steps = [];
+    var warnings = [];
+    clauses.forEach(function (raw) {
+      var result = parseClause(raw);
+      if (!result) return;
+      if (result.warning) { warnings.push(result.warning); return; }
+      steps.push(result);
+    });
+    return { steps: steps, warnings: warnings };
+  }
+
+  function formatDurationForSyntax(sec) {
+    sec = Math.round(sec);
+    if (sec % 60 === 0) return (sec / 60) + 'm';
+    var m = Math.floor(sec / 60), s = sec % 60;
+    return (m > 0 ? m + 'm' : '') + s + 's';
+  }
+
+  function formatDistanceForSyntax(meters) {
+    meters = Math.round(meters);
+    if (meters < 1000) return meters + 'mtr';
+    return (meters % 1000 === 0 ? (meters / 1000) : (meters / 1000).toFixed(2)) + 'km';
+  }
+
+  function quantityForSyntax(quantity) {
+    if (quantity.durationSec != null) return formatDurationForSyntax(quantity.durationSec);
+    return formatDistanceForSyntax(quantity.distanceM);
+  }
+
+  function formatTargetForSyntax(target) {
+    if (target.kind === 'pace') {
+      var m = Math.floor(target.paceSec / 60), s = target.paceSec % 60;
+      return m + ':' + String(s).padStart(2, '0') + '/' + target.unit + ' Pace';
+    }
+    return target.min + '-' + target.max + '% Pace';
+  }
+
+  function stepLineForSyntax(parsedStep) {
+    return '- ' + quantityForSyntax(parsedStep.quantity) + ' ' + formatTargetForSyntax(parsedStep.target);
+  }
+
+  function renderWorkoutSyntax(steps) {
+    var sections = steps.map(function (step) {
+      if (step.type === 'warmup') return 'Warmup\n' + stepLineForSyntax(step);
+      if (step.type === 'cooldown') return 'Cooldown\n' + stepLineForSyntax(step);
+      if (step.type === 'repeat') {
+        var lines = [step.reps + 'x', stepLineForSyntax(step.work)];
+        if (step.recovery) lines.push(stepLineForSyntax(step.recovery));
+        return lines.join('\n');
+      }
+      return stepLineForSyntax(step);
+    });
+    return sections.join('\n\n');
+  }
+
+  function quantityToInputText(quantity) {
+    if (!quantity) return '';
+    if (quantity.durationSec != null) {
+      var sec = quantity.durationSec;
+      return (sec % 60 === 0) ? (sec / 60) + ' min' : sec + ' sec';
+    }
+    var meters = quantity.distanceM;
+    return meters >= 1000 ? (meters / 1000) + ' km' : Math.round(meters) + ' m';
+  }
+
+  function targetToInputText(target) {
+    if (target.kind === 'pace') {
+      var m = Math.floor(target.paceSec / 60), s = target.paceSec % 60;
+      return m + ':' + String(s).padStart(2, '0') + '/' + target.unit;
+    }
+    return target.min + '-' + target.max + '%';
+  }
+
+  function stepLabel(step) {
+    if (step.type === 'warmup') return 'Warmup';
+    if (step.type === 'cooldown') return 'Cooldown';
+    if (step.type === 'repeat') return step.reps + '× Repeat';
+    return 'Step';
+  }
+
+  function updateWorkoutSendAvailability() {
+    els.workoutSendBtn.disabled = state.workoutStepsData.length === 0;
+  }
+
+  function onWorkoutStepsChanged() {
+    updateWorkoutSendAvailability();
+    if (state.workoutEditMode === 'structured') {
+      els.workoutSyntax.value = renderWorkoutSyntax(state.workoutStepsData);
+    }
+  }
+
+  function makeStepSubRow(labelText, quantity, target, onQuantityChange, onTargetChange) {
+    var row = document.createElement('div');
+    row.className = 'step-fields';
+    row.style.width = '100%';
+    if (labelText) {
+      var lbl = document.createElement('span');
+      lbl.className = 'step-type';
+      lbl.style.alignSelf = 'center';
+      lbl.textContent = labelText;
+      row.appendChild(lbl);
+    }
+    var qInput = document.createElement('input');
+    qInput.type = 'text';
+    qInput.value = quantityToInputText(quantity);
+    qInput.addEventListener('input', function () {
+      var q = extractQuantity(qInput.value);
+      if (q) onQuantityChange(q);
+    });
+    row.appendChild(qInput);
+
+    var tInput = document.createElement('input');
+    tInput.type = 'text';
+    tInput.value = targetToInputText(target);
+    tInput.addEventListener('input', function () {
+      var t = parseTargetText(tInput.value);
+      if (t) onTargetChange(t);
+    });
+    row.appendChild(tInput);
+    return row;
+  }
+
+  function renderStepCards() {
+    els.workoutSteps.innerHTML = '';
+    state.workoutStepsData.forEach(function (step, idx) {
+      var card = document.createElement('div');
+      card.className = 'step-card';
+
+      var info = document.createElement('div');
+      info.style.flex = '1';
+
+      var typeLabel = document.createElement('div');
+      typeLabel.className = 'step-type';
+      typeLabel.textContent = stepLabel(step);
+      info.appendChild(typeLabel);
+
+      var fields = document.createElement('div');
+      fields.className = 'step-fields';
+
+      if (step.type === 'repeat') {
+        var repRow = document.createElement('div');
+        repRow.className = 'step-fields';
+        repRow.style.width = '100%';
+        var repInput = document.createElement('input');
+        repInput.type = 'text';
+        repInput.value = step.reps + 'x';
+        repInput.addEventListener('input', function () {
+          var n = parseInt(repInput.value, 10);
+          if (n > 0) { step.reps = n; onWorkoutStepsChanged(); }
+        });
+        repRow.appendChild(repInput);
+        fields.appendChild(repRow);
+
+        fields.appendChild(makeStepSubRow('Work', step.work.quantity, step.work.target,
+          function (q) { step.work.quantity = q; onWorkoutStepsChanged(); },
+          function (t) { step.work.target = t; onWorkoutStepsChanged(); }));
+
+        if (step.recovery) {
+          fields.appendChild(makeStepSubRow('Recovery', step.recovery.quantity, step.recovery.target,
+            function (q) { step.recovery.quantity = q; onWorkoutStepsChanged(); },
+            function (t) { step.recovery.target = t; onWorkoutStepsChanged(); }));
+        }
+      } else {
+        fields.appendChild(makeStepSubRow(null, step.quantity, step.target,
+          function (q) { step.quantity = q; onWorkoutStepsChanged(); },
+          function (t) { step.target = t; onWorkoutStepsChanged(); }));
+      }
+
+      info.appendChild(fields);
+
+      var del = document.createElement('button');
+      del.className = 'delete-btn';
+      del.textContent = '×';
+      del.addEventListener('click', function () {
+        state.workoutStepsData.splice(idx, 1);
+        renderStepCards();
+        onWorkoutStepsChanged();
+      });
+
+      card.appendChild(info);
+      card.appendChild(del);
+      els.workoutSteps.appendChild(card);
+    });
+  }
+
+  function generateDefaultWorkoutName(steps) {
+    var repeat = steps.filter(function (s) { return s.type === 'repeat'; })[0];
+    if (repeat) {
+      return repeat.reps + 'x' + quantityToInputText(repeat.work.quantity).replace(/\s+/g, '') + ' Intervals';
+    }
+    return 'Workout';
+  }
+
+  function handleParseWorkout() {
+    var result = parseWorkoutText(els.workoutInput.value);
+    state.workoutStepsData = result.steps;
+    state.workoutEditMode = 'structured';
+
+    els.workoutWarnings.innerHTML = '';
+    result.warnings.forEach(function (w) {
+      var div = document.createElement('div');
+      div.className = 'warning-line';
+      div.textContent = 'Couldn\'t parse: "' + w + '" — edit the syntax below manually.';
+      els.workoutWarnings.appendChild(div);
+    });
+
+    renderStepCards();
+    els.workoutSyntax.value = renderWorkoutSyntax(state.workoutStepsData);
+
+    var hasSteps = state.workoutStepsData.length > 0;
+    els.workoutSyntaxField.style.display = hasSteps ? '' : 'none';
+    els.workoutSendFields.style.display = hasSteps ? '' : 'none';
+    els.workoutDateField.style.display = hasSteps ? '' : 'none';
+    els.workoutKeyField.style.display = hasSteps ? '' : 'none';
+    els.workoutSendBtn.style.display = hasSteps ? '' : 'none';
+    updateWorkoutSendAvailability();
+
+    if (hasSteps && !els.workoutName.value.trim()) {
+      els.workoutName.value = generateDefaultWorkoutName(state.workoutStepsData);
+    }
+  }
+
+  function pad2(n) { return String(n).padStart(2, '0'); }
+
+  function computeStartDateLocal() {
+    var d;
+    if (state.workoutDateWhen === 'custom' && els.workoutDateCustom.value) {
+      var parts = els.workoutDateCustom.value.split('-');
+      d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    } else {
+      d = new Date();
+      if (state.workoutDateWhen === 'tomorrow') d.setDate(d.getDate() + 1);
+    }
+    var dateStr = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    return dateStr + 'T06:00:00';
+  }
+
+  function stepDurationSec(step, fallbackPaceSecPerKm) {
+    if (step.quantity.durationSec != null) return step.quantity.durationSec;
+    var paceSecPerM = (step.target.kind === 'pace')
+      ? (step.target.paceSec / (step.target.unit === 'km' ? 1000 : 1609.344))
+      : (fallbackPaceSecPerKm / 1000);
+    return step.quantity.distanceM * paceSecPerM;
+  }
+
+  function estimateMovingTime(steps) {
+    var fallbackPaceSecPerKm = 360;
+    var total = 0;
+    steps.forEach(function (step) {
+      if (step.type === 'repeat') {
+        var perRep = stepDurationSec(step.work, fallbackPaceSecPerKm) + (step.recovery ? stepDurationSec(step.recovery, fallbackPaceSecPerKm) : 0);
+        total += perRep * step.reps;
+      } else {
+        total += stepDurationSec(step, fallbackPaceSecPerKm);
+      }
+    });
+    return Math.round(total);
+  }
+
+  function showWorkoutError(msg) {
+    els.workoutError.textContent = msg;
+    els.workoutError.classList.add('show');
+  }
+
+  function sendWorkoutToIntervals() {
+    els.workoutError.classList.remove('show');
+    var apiKey = els.workoutApiKey.value.trim();
+    if (!apiKey) {
+      showWorkoutError('Enter your intervals.icu API key above first.');
+      return;
+    }
+    if (!state.workoutStepsData.length) {
+      showWorkoutError('Parse a workout first.');
+      return;
+    }
+
+    var payload = {
+      category: 'WORKOUT',
+      start_date_local: computeStartDateLocal(),
+      type: 'Run',
+      target: 'PACE',
+      name: els.workoutName.value.trim() || 'Workout',
+      description: els.workoutSyntax.value,
+      moving_time: estimateMovingTime(state.workoutStepsData)
+    };
+
+    els.workoutSendBtn.disabled = true;
+    els.workoutStatus.textContent = 'Sending…';
+
+    fetch('https://intervals.icu/api/v1/athlete/0/events', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Basic ' + btoa('API_KEY:' + apiKey)
+      },
+      body: JSON.stringify(payload)
+    }).then(function (r) {
+      if (r.ok) return r.json();
+      if (r.status === 401 || r.status === 403) throw new Error('AUTH');
+      return r.text().then(function (t) { throw new Error(t || ('HTTP ' + r.status)); });
+    }).then(function () {
+      els.workoutStatus.textContent = 'Sent — check intervals.icu, and your watch if it\'s linked there.';
+      history.unshift({ summary: 'Workout: ' + payload.name + ' → intervals.icu', timestamp: new Date().toLocaleString() });
+      if (history.length > 25) history.length = 25;
+      saveHistoryToStorage();
+      renderHistory();
+    }).catch(function (err) {
+      if (err.message === 'AUTH') {
+        showWorkoutError('Sign-in failed — check your intervals.icu API key.');
+      } else {
+        showWorkoutError('Could not send workout — ' + err.message);
+      }
+      els.workoutStatus.textContent = '';
+    }).then(function () {
+      els.workoutSendBtn.disabled = state.workoutStepsData.length === 0;
+    });
+  }
+
   function updateVisibility() {
     els.tabs.forEach(function (t) {
       t.classList.toggle('active', t.dataset.solve === state.solve);
     });
     var isWeather = state.solve === 'weather';
-    els.calcPanel.style.display = isWeather ? 'none' : '';
+    var isWorkout = state.solve === 'workout';
+    els.calcPanel.style.display = (isWeather || isWorkout) ? 'none' : '';
     els.weatherPanel.style.display = isWeather ? '' : 'none';
+    els.workoutPanel.style.display = isWorkout ? '' : 'none';
     if (isWeather) {
       calculateWeather();
+      return;
+    }
+    if (isWorkout) {
       return;
     }
     [els.fieldDistance, els.fieldTime, els.fieldPace].forEach(function (f) { f.style.display = ''; });
@@ -995,6 +1564,33 @@
       searchLocationWeather();
     }
   });
+
+  els.workoutParseBtn.addEventListener('click', handleParseWorkout);
+
+  els.workoutSyntax.addEventListener('input', function () {
+    state.workoutEditMode = 'raw';
+  });
+
+  els.workoutDateToggle.forEach(function (b) {
+    b.addEventListener('click', function () {
+      state.workoutDateWhen = b.dataset.when;
+      els.workoutDateToggle.forEach(function (x) { x.classList.toggle('active', x === b); });
+      els.workoutDateCustom.style.display = state.workoutDateWhen === 'custom' ? '' : 'none';
+    });
+  });
+
+  els.workoutKeyToggle.addEventListener('click', function () {
+    var isPassword = els.workoutApiKey.type === 'password';
+    els.workoutApiKey.type = isPassword ? 'text' : 'password';
+    els.workoutKeyToggle.textContent = isPassword ? 'Hide' : 'Show';
+  });
+
+  els.workoutApiKey.value = localStorage.getItem(ICU_KEY_KEY) || '';
+  els.workoutApiKey.addEventListener('input', function () {
+    localStorage.setItem(ICU_KEY_KEY, els.workoutApiKey.value.trim());
+  });
+
+  els.workoutSendBtn.addEventListener('click', sendWorkoutToIntervals);
 
   updateVisibility();
   renderHistory();
