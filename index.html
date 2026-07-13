@@ -989,7 +989,7 @@
   // ---- Workout Builder ----
 
   var EFFORT_RANGES = {
-    recovery: [55, 65], jog: [55, 65],
+    recovery: [55, 65], jog: [55, 65], rest: [55, 65],
     easy: [65, 75],
     steady: [78, 85],
     tempo: [90, 97], threshold: [90, 97],
@@ -1010,7 +1010,7 @@
   var QUANTITY_RE = /(\d+(?:\.\d+)?)\s*(hours|hour|hrs|hr|h|minutes|minute|mins|min|seconds|second|secs|sec|s|kilometers|kilometer|km|miles|mile|mi|meters|meter|metres|metre|m)\b/i;
   var PACE_WITH_MARKER_RE = /(\d{1,2}):(\d{2})\s*(?:\/\s*(km|kilometers?|mi|miles?)|\bper\s+(km|kilometers?|mi|miles?)\b|\s*(pace))/i;
   var BARE_TIME_RE = /(\d{1,2}):(\d{2})/;
-  var EFFORT_RE = /\b(recovery|jog|easy|steady|tempo|threshold|hard|fast)\b/i;
+  var EFFORT_RE = /\b(recovery|jog|rest|easy|steady|tempo|threshold|hard|fast)\b/i;
 
   function extractQuantity(text) {
     var m = QUANTITY_RE.exec(text);
@@ -1079,9 +1079,12 @@
     } else if (raw.kind === 'bareTime') {
       if (quantity && quantity.distanceM != null) {
         // Convert "goal time for this distance" into an equivalent pace.
-        var unit = quantity.unitFamily === 'imperial' ? 'mi' : 'km';
-        var distInUnit = quantity.distanceM / (unit === 'km' ? 1000 : 1609.344);
-        target = { kind: 'pace', paceSec: Math.round(raw.sec / distInUnit), unit: unit };
+        // Standardized to miles regardless of the interval's own distance unit
+        // (e.g. a "400m" rep still gets a "/mi" pace target) — this app is mile-first
+        // throughout, and intervals.icu accepts a pace unit independent of the step's
+        // own distance unit, so this doesn't affect how the interval itself is run.
+        var distInMiles = quantity.distanceM / 1609.344;
+        target = { kind: 'pace', paceSec: Math.round(raw.sec / distInMiles), unit: 'mi' };
       } else {
         // No distance to convert against (e.g. a duration-based step) — treat as a direct pace.
         target = { kind: 'pace', paceSec: raw.sec, unit: 'mi' };
@@ -1131,6 +1134,27 @@
     return text.split(/,|\bthen\b|\n/i).map(function (s) { return s.trim(); }).filter(Boolean);
   }
 
+  // Natural phrasing often splits a repeat's recovery into its own clause, e.g.
+  // "8x 400 @ 1:10, 75 seconds rest between reps" — the rest clause names when it
+  // applies ("between reps" = per-rep, merge into the repeat; "after the last rep" =
+  // once at the end, leave it as its own standalone step).
+  function mergeInterRepRecovery(steps) {
+    var merged = [];
+    for (var i = 0; i < steps.length; i++) {
+      var step = steps[i];
+      var next = steps[i + 1];
+      if (step.type === 'repeat' && !step.recovery && next && next.type === 'step' &&
+          /\bbetween\b/i.test(next.rawText) && !/\bafter\b/i.test(next.rawText)) {
+        step.recovery = { quantity: next.quantity, target: next.target };
+        merged.push(step);
+        i++;
+        continue;
+      }
+      merged.push(step);
+    }
+    return merged;
+  }
+
   function parseWorkoutText(text) {
     var clauses = tokenizeWorkoutText(text);
     var steps = [];
@@ -1139,9 +1163,10 @@
       var result = parseClause(raw);
       if (!result) return;
       if (result.warning) { warnings.push(result.warning); return; }
+      result.rawText = raw;
       steps.push(result);
     });
-    return { steps: steps, warnings: warnings };
+    return { steps: mergeInterRepRecovery(steps), warnings: warnings };
   }
 
   function formatDurationForSyntax(sec) {
