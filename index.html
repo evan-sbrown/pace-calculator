@@ -678,6 +678,16 @@
     els.wSecondHint.textContent = 'Relative humidity (%)';
   }
 
+  function placeLabel(geo, lat, lon) {
+    if (geo) {
+      var city = geo.city || geo.locality || '';
+      var stateCode = geo.principalSubdivisionCode ? geo.principalSubdivisionCode.split('-').pop() : geo.principalSubdivision;
+      if (city && stateCode) return city + ', ' + stateCode;
+      if (city) return city;
+    }
+    return lat.toFixed(1) + '°, ' + lon.toFixed(1) + '°';
+  }
+
   function fetchLocalWeather() {
     if (!navigator.geolocation) {
       els.wLocateStatus.textContent = 'Geolocation isn\'t supported in this browser.';
@@ -689,18 +699,24 @@
     navigator.geolocation.getCurrentPosition(function (pos) {
       var lat = pos.coords.latitude, lon = pos.coords.longitude;
       els.wLocateStatus.textContent = 'Fetching current weather…';
-      var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
+      var weatherUrl = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
         '&current=temperature_2m,relative_humidity_2m&temperature_unit=fahrenheit';
+      var geocodeUrl = 'https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=' + lat +
+        '&longitude=' + lon + '&localityLanguage=en';
 
-      fetch(url).then(function (r) {
-        if (!r.ok) throw new Error('Weather request failed');
-        return r.json();
-      }).then(function (data) {
+      Promise.all([
+        fetch(weatherUrl).then(function (r) {
+          if (!r.ok) throw new Error('Weather request failed');
+          return r.json();
+        }),
+        fetch(geocodeUrl).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
+      ]).then(function (results) {
+        var data = results[0], geo = results[1];
         if (!data.current) throw new Error('No current weather in response');
         setSecondModeToHumidity();
         els.wTemp.value = Math.round(data.current.temperature_2m);
         els.wSecond.value = Math.round(data.current.relative_humidity_2m);
-        els.wLocateStatus.textContent = 'Loaded current conditions for your location (' + lat.toFixed(1) + '°, ' + lon.toFixed(1) + '°).';
+        els.wLocateStatus.textContent = 'Loaded current conditions for ' + placeLabel(geo, lat, lon) + '.';
         els.wLocateBtn.disabled = false;
         calculateWeather();
       }).catch(function () {
