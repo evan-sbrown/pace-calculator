@@ -988,13 +988,15 @@
 
   // ---- Workout Builder ----
 
+  // Recovery/jog/rest/warmup/cooldown intentionally have no entries here — they're
+  // "open" (no intensity target) by default. See OPEN_EFFORT_WORDS below.
   var EFFORT_RANGES = {
-    recovery: [55, 65], jog: [55, 65], rest: [55, 65],
     easy: [65, 75],
     steady: [78, 85],
     tempo: [90, 97], threshold: [90, 97],
     hard: [100, 110], fast: [100, 110]
   };
+  var OPEN_EFFORT_WORDS = { recovery: true, jog: true, rest: true };
 
   var UNIT_TO_SECONDS = {
     hours: 3600, hour: 3600, hrs: 3600, hr: 3600, h: 3600,
@@ -1087,8 +1089,10 @@
     }
     var e = EFFORT_RE.exec(text);
     if (e) {
-      var range = EFFORT_RANGES[e[1].toLowerCase()];
+      var word = e[1].toLowerCase();
       var cleanedE = text.slice(0, e.index) + ' ' + text.slice(e.index + e[0].length);
+      if (OPEN_EFFORT_WORDS[word]) return { kind: 'open', cleaned: cleanedE };
+      var range = EFFORT_RANGES[word];
       return { kind: 'percent', min: range[0], max: range[1], cleaned: cleanedE };
     }
     return { kind: 'none', cleaned: text };
@@ -1096,6 +1100,7 @@
 
   function parseTargetText(text) {
     text = text.trim();
+    if (!text || /^(open|none|free)$/i.test(text)) return { kind: 'open' };
     var pace = /^(\d{1,2}):(\d{2})\s*\/?\s*(km|mi)?/i.exec(text);
     if (pace) return { kind: 'pace', paceSec: parseInt(pace[1], 10) * 60 + parseInt(pace[2], 10), unit: (pace[3] || 'mi').toLowerCase() };
     var pct = /(\d+)\s*-\s*(\d+)\s*%/.exec(text);
@@ -1103,7 +1108,12 @@
     var single = /^(\d+)\s*%$/.exec(text);
     if (single) { var v = parseInt(single[1], 10); return { kind: 'percent', min: v, max: v }; }
     var effort = EFFORT_RE.exec(text);
-    if (effort) { var r = EFFORT_RANGES[effort[1].toLowerCase()]; return { kind: 'percent', min: r[0], max: r[1] }; }
+    if (effort) {
+      var word = effort[1].toLowerCase();
+      if (OPEN_EFFORT_WORDS[word]) return { kind: 'open' };
+      var r = EFFORT_RANGES[word];
+      return { kind: 'percent', min: r[0], max: r[1] };
+    }
     return null;
   }
 
@@ -1140,6 +1150,10 @@
       }
     } else if (raw.kind === 'percent') {
       target = { kind: 'percent', min: raw.min, max: raw.max };
+    } else if (raw.kind === 'open') {
+      target = { kind: 'open' };
+    } else if (defaultEffort === 'open') {
+      target = { kind: 'open' };
     } else {
       target = { kind: 'percent', min: EFFORT_RANGES[defaultEffort][0], max: EFFORT_RANGES[defaultEffort][1] };
     }
@@ -1167,13 +1181,13 @@
       if (!work.quantity) return { warning: raw };
       var recovery = null;
       if (halves[1]) {
-        var recoveryParsed = parseSingleStep(halves[1], 'recovery');
+        var recoveryParsed = parseSingleStep(halves[1], 'open');
         if (recoveryParsed.quantity) recovery = recoveryParsed;
       }
       return { type: 'repeat', reps: reps, work: work, recovery: recovery };
     }
 
-    var parsed = parseSingleStep(text, 'easy');
+    var parsed = parseSingleStep(text, (type === 'warmup' || type === 'cooldown') ? 'open' : 'easy');
     if (!parsed.quantity) return { warning: raw };
     parsed.type = type;
     return parsed;
@@ -1241,6 +1255,7 @@
   }
 
   function formatTargetForSyntax(target) {
+    if (target.kind === 'open') return '';
     if (target.kind === 'pace') {
       var m = Math.floor(target.paceSec / 60), s = target.paceSec % 60;
       return m + ':' + String(s).padStart(2, '0') + '/' + target.unit + ' Pace';
@@ -1249,7 +1264,8 @@
   }
 
   function stepLineForSyntax(parsedStep) {
-    return '- ' + quantityForSyntax(parsedStep.quantity) + ' ' + formatTargetForSyntax(parsedStep.target);
+    var targetText = formatTargetForSyntax(parsedStep.target);
+    return '- ' + quantityForSyntax(parsedStep.quantity) + (targetText ? ' ' + targetText : '');
   }
 
   function renderWorkoutSyntax(steps) {
@@ -1281,6 +1297,7 @@
   }
 
   function targetToInputText(target) {
+    if (target.kind === 'open') return 'Open';
     if (target.kind === 'pace') {
       var m = Math.floor(target.paceSec / 60), s = target.paceSec % 60;
       return m + ':' + String(s).padStart(2, '0') + '/' + target.unit;
