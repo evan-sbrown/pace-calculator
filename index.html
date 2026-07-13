@@ -165,6 +165,37 @@
     color: var(--text-dim);
     margin-top: 8px;
   }
+  .search-row {
+    display: flex;
+    gap: 8px;
+  }
+  .search-row input {
+    flex: 1;
+  }
+  .search-row button {
+    flex: 0 0 auto;
+    padding: 12px 18px;
+    border-radius: 10px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    font-size: 0.9rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .search-row button:active {
+    background: var(--accent);
+    color: #fff;
+  }
+  .or-divider {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 4px 0 12px;
+  }
   .result {
     margin-top: 22px;
     display: none;
@@ -341,6 +372,14 @@
       <p class="hint" style="margin-bottom:16px">Estimates how much heat and humidity will slow your pace, using a wet-bulb-globe-temperature model. Treat it as a ballpark, not a guarantee.</p>
 
       <button class="save-btn" id="w-locate-btn" type="button" style="margin-top:0;margin-bottom:8px">📍 Use my location</button>
+
+      <div class="or-divider">or</div>
+
+      <div class="search-row" style="margin-bottom:8px">
+        <input type="text" id="w-location-search" placeholder="e.g. Austin, TX">
+        <button type="button" id="w-location-search-btn">Go</button>
+      </div>
+
       <div class="derived-hint" id="w-locate-status" style="text-align:center;margin-bottom:16px"></div>
 
       <div class="field">
@@ -450,7 +489,9 @@
     wSaveBtn: document.getElementById('w-save-btn'),
     wError: document.getElementById('w-error'),
     wLocateBtn: document.getElementById('w-locate-btn'),
-    wLocateStatus: document.getElementById('w-locate-status')
+    wLocateStatus: document.getElementById('w-locate-status'),
+    wLocationSearch: document.getElementById('w-location-search'),
+    wLocationSearchBtn: document.getElementById('w-location-search-btn')
   };
 
   var HISTORY_KEY = 'paceCalcHistory';
@@ -703,6 +744,25 @@
     return lat.toFixed(1) + '°, ' + lon.toFixed(1) + '°';
   }
 
+  function fetchWeatherForCoords(lat, lon) {
+    var weatherUrl = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
+      '&current=temperature_2m,relative_humidity_2m&temperature_unit=fahrenheit';
+    return fetch(weatherUrl).then(function (r) {
+      if (!r.ok) throw new Error('Weather request failed');
+      return r.json();
+    }).then(function (data) {
+      if (!data.current) throw new Error('No current weather in response');
+      return data;
+    });
+  }
+
+  function applyWeatherData(data) {
+    setSecondModeToHumidity();
+    els.wTemp.value = Math.round(data.current.temperature_2m);
+    els.wSecond.value = Math.round(data.current.relative_humidity_2m);
+    calculateWeather();
+  }
+
   function fetchLocalWeather() {
     if (!navigator.geolocation) {
       els.wLocateStatus.textContent = 'Geolocation isn\'t supported in this browser.';
@@ -714,26 +774,16 @@
     navigator.geolocation.getCurrentPosition(function (pos) {
       var lat = pos.coords.latitude, lon = pos.coords.longitude;
       els.wLocateStatus.textContent = 'Fetching current weather…';
-      var weatherUrl = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
-        '&current=temperature_2m,relative_humidity_2m&temperature_unit=fahrenheit';
       var geocodeUrl = 'https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=' + lat +
         '&longitude=' + lon + '&localityLanguage=en';
 
       Promise.all([
-        fetch(weatherUrl).then(function (r) {
-          if (!r.ok) throw new Error('Weather request failed');
-          return r.json();
-        }),
+        fetchWeatherForCoords(lat, lon),
         fetch(geocodeUrl).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
       ]).then(function (results) {
-        var data = results[0], geo = results[1];
-        if (!data.current) throw new Error('No current weather in response');
-        setSecondModeToHumidity();
-        els.wTemp.value = Math.round(data.current.temperature_2m);
-        els.wSecond.value = Math.round(data.current.relative_humidity_2m);
-        els.wLocateStatus.textContent = 'Loaded current conditions for ' + placeLabel(geo, lat, lon) + '.';
+        applyWeatherData(results[0]);
+        els.wLocateStatus.textContent = 'Loaded current conditions for ' + placeLabel(results[1], lat, lon) + '.';
         els.wLocateBtn.disabled = false;
-        calculateWeather();
       }).catch(function () {
         els.wLocateStatus.textContent = 'Could not fetch weather for your location — enter it manually below.';
         els.wLocateBtn.disabled = false;
@@ -744,6 +794,60 @@
       els.wLocateStatus.textContent = msg;
       els.wLocateBtn.disabled = false;
     }, { timeout: 10000 });
+  }
+
+  var US_STATE_NAMES = {
+    al: 'alabama', ak: 'alaska', az: 'arizona', ar: 'arkansas', ca: 'california', co: 'colorado',
+    ct: 'connecticut', de: 'delaware', fl: 'florida', ga: 'georgia', hi: 'hawaii', id: 'idaho',
+    il: 'illinois', 'in': 'indiana', ia: 'iowa', ks: 'kansas', ky: 'kentucky', la: 'louisiana',
+    me: 'maine', md: 'maryland', ma: 'massachusetts', mi: 'michigan', mn: 'minnesota', ms: 'mississippi',
+    mo: 'missouri', mt: 'montana', ne: 'nebraska', nv: 'nevada', nh: 'new hampshire', nj: 'new jersey',
+    nm: 'new mexico', ny: 'new york', nc: 'north carolina', nd: 'north dakota', oh: 'ohio', ok: 'oklahoma',
+    or: 'oregon', pa: 'pennsylvania', ri: 'rhode island', sc: 'south carolina', sd: 'south dakota',
+    tn: 'tennessee', tx: 'texas', ut: 'utah', vt: 'vermont', va: 'virginia', wa: 'washington',
+    wv: 'west virginia', wi: 'wisconsin', wy: 'wyoming', dc: 'district of columbia'
+  };
+
+  function findBestPlaceMatch(results, qualifier) {
+    if (!qualifier) return results[0];
+    var qLower = qualifier.toLowerCase();
+    var qExpanded = US_STATE_NAMES[qLower] || qLower;
+    var match = results.find(function (r) {
+      var admin1 = (r.admin1 || '').toLowerCase();
+      var country = (r.country || '').toLowerCase();
+      var cc = (r.country_code || '').toLowerCase();
+      return admin1.indexOf(qExpanded) !== -1 || country.indexOf(qLower) !== -1 || cc === qLower;
+    });
+    return match || results[0];
+  }
+
+  function searchLocationWeather() {
+    var query = els.wLocationSearch.value.trim();
+    if (!query) return;
+    els.wLocationSearchBtn.disabled = true;
+    els.wLocateStatus.textContent = 'Searching for "' + query + '"…';
+
+    var parts = query.split(',').map(function (p) { return p.trim(); }).filter(Boolean);
+    var namePart = parts[0] || query;
+    var qualifier = parts[1] || '';
+    var geocodeUrl = 'https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(namePart) + '&count=10&language=en&format=json';
+
+    fetch(geocodeUrl).then(function (r) {
+      if (!r.ok) throw new Error('Search request failed');
+      return r.json();
+    }).then(function (data) {
+      if (!data.results || !data.results.length) throw new Error('No matching location');
+      var place = findBestPlaceMatch(data.results, qualifier);
+      var label = place.name + (place.admin1 ? ', ' + place.admin1 : (place.country ? ', ' + place.country : ''));
+      return fetchWeatherForCoords(place.latitude, place.longitude).then(function (weatherData) {
+        applyWeatherData(weatherData);
+        els.wLocateStatus.textContent = 'Loaded current conditions for ' + label + '.';
+      });
+    }).catch(function () {
+      els.wLocateStatus.textContent = 'Could not find "' + query + '" — try a different spelling, or just the city name.';
+    }).then(function () {
+      els.wLocationSearchBtn.disabled = false;
+    });
   }
 
   function updateVisibility() {
@@ -883,6 +987,14 @@
   });
 
   els.wLocateBtn.addEventListener('click', fetchLocalWeather);
+
+  els.wLocationSearchBtn.addEventListener('click', searchLocationWeather);
+  els.wLocationSearch.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      searchLocationWeather();
+    }
+  });
 
   updateVisibility();
   renderHistory();
