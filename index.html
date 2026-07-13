@@ -1030,6 +1030,44 @@
     return { distanceM: parseFloat(m[1]), unitFamily: 'metric' };
   }
 
+  // Converts a goal time for a distance into an equivalent pace, standardized to
+  // miles (this app is mile-first throughout; intervals.icu accepts a pace unit
+  // independent of the step's own distance unit, so this doesn't affect the interval).
+  function paceFromGoalTime(distanceM, goalSec) {
+    return { kind: 'pace', paceSec: Math.round(goalSec / (distanceM / 1609.344)), unit: 'mi' };
+  }
+
+  // Finds every "number+unit" token in a clause (not just the first) so a distance
+  // and a separate bare-duration goal time (e.g. "400m in 75 sec", no colon) can both
+  // be recognized, rather than the duration being silently dropped.
+  function findAllQuantityTokens(text) {
+    var re = new RegExp(QUANTITY_RE.source, 'gi');
+    var tokens = [];
+    var consumedRanges = [];
+    var m;
+    while ((m = re.exec(text))) {
+      var value = parseFloat(m[1]);
+      var unit = m[2].toLowerCase();
+      if (UNIT_TO_SECONDS.hasOwnProperty(unit)) tokens.push({ type: 'duration', durationSec: value * UNIT_TO_SECONDS[unit] });
+      else if (UNIT_TO_METERS.hasOwnProperty(unit)) tokens.push({ type: 'distance', distanceM: value * UNIT_TO_METERS[unit], unitFamily: /^mi/.test(unit) ? 'imperial' : 'metric' });
+      consumedRanges.push([m.index, m.index + m[0].length]);
+    }
+    // No explicit-unit distance found — look for a bare number not already part of a
+    // duration match (e.g. the "400" in "400 in 75 seconds", distinct from the "75").
+    if (!tokens.some(function (t) { return t.type === 'distance'; })) {
+      var bareRe = /\d+(?:\.\d+)?/g;
+      var bm;
+      while ((bm = bareRe.exec(text))) {
+        var overlaps = consumedRanges.some(function (r) { return bm.index >= r[0] && bm.index < r[1]; });
+        if (!overlaps) {
+          tokens.push({ type: 'distance', distanceM: parseFloat(bm[0]), unitFamily: 'metric' });
+          break;
+        }
+      }
+    }
+    return tokens;
+  }
+
   // Returns { kind: 'explicitPace'|'bareTime'|'percent'|'none', ..., cleaned }.
   // A bare "mm:ss" with no unit/pace marker is ambiguous until we know whether the
   // clause also names a distance — resolved in parseSingleStep, since e.g. "400 @ 1:10"
@@ -1071,6 +1109,22 @@
 
   function parseSingleStep(text, defaultEffort) {
     var raw = extractTargetRaw(text);
+
+    // No colon-time and no effort word — check whether the clause names a distance
+    // AND a separate bare duration (e.g. "400m in 75 sec"), which means "run this
+    // distance in this time", same as the colon case below, just without a colon.
+    if (raw.kind === 'none') {
+      var tokens = findAllQuantityTokens(raw.cleaned);
+      var distanceToken = tokens.filter(function (t) { return t.type === 'distance'; })[0];
+      var durationToken = tokens.filter(function (t) { return t.type === 'duration'; })[0];
+      if (distanceToken && durationToken) {
+        return {
+          quantity: { distanceM: distanceToken.distanceM, unitFamily: distanceToken.unitFamily },
+          target: paceFromGoalTime(distanceToken.distanceM, durationToken.durationSec)
+        };
+      }
+    }
+
     var quantity = extractQuantity(raw.cleaned) || extractBareNumberAsMeters(raw.cleaned);
 
     var target;
@@ -1079,12 +1133,7 @@
     } else if (raw.kind === 'bareTime') {
       if (quantity && quantity.distanceM != null) {
         // Convert "goal time for this distance" into an equivalent pace.
-        // Standardized to miles regardless of the interval's own distance unit
-        // (e.g. a "400m" rep still gets a "/mi" pace target) — this app is mile-first
-        // throughout, and intervals.icu accepts a pace unit independent of the step's
-        // own distance unit, so this doesn't affect how the interval itself is run.
-        var distInMiles = quantity.distanceM / 1609.344;
-        target = { kind: 'pace', paceSec: Math.round(raw.sec / distInMiles), unit: 'mi' };
+        target = paceFromGoalTime(quantity.distanceM, raw.sec);
       } else {
         // No distance to convert against (e.g. a duration-based step) — treat as a direct pace.
         target = { kind: 'pace', paceSec: raw.sec, unit: 'mi' };
