@@ -1,0 +1,849 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Pace Calculator</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #1a1d24;
+    --accent: #4f9dff;
+    --accent-dim: #2c5da8;
+    --text: #eef1f6;
+    --text-dim: #9aa3b2;
+    --border: #2a2e38;
+    --danger: #ff6b6b;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f5f7;
+      --card: #ffffff;
+      --accent: #2f6fed;
+      --accent-dim: #cfe0fb;
+      --text: #14161a;
+      --text-dim: #6b7280;
+      --border: #e3e5e9;
+      --danger: #d92d2d;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wrap {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 24px 16px 48px;
+    min-height: 100vh;
+  }
+  h1 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin: 4px 0 4px;
+    text-align: center;
+  }
+  .subtitle {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    margin: 0 0 24px;
+  }
+  .tabs {
+    display: flex;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 4px;
+    gap: 4px;
+    margin-bottom: 20px;
+  }
+  .tab {
+    flex: 1;
+    text-align: center;
+    padding: 10px 6px;
+    border-radius: 9px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s, color 0.15s;
+  }
+  .tab.active {
+    background: var(--accent);
+    color: #fff;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+  }
+  .field {
+    margin-bottom: 18px;
+  }
+  .field:last-child {
+    margin-bottom: 0;
+  }
+  label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  input[type="text"], input[type="number"] {
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 1.1rem;
+    color: var(--text);
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input:focus {
+    border-color: var(--accent);
+  }
+  .hint {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-top: 5px;
+  }
+  .pill-toggle {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .pill-btn {
+    flex: 1;
+    padding: 7px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .pill-btn.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .heat-badge {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: var(--border);
+    margin-bottom: 14px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .heat-badge.show { display: flex; }
+  .heat-badge .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .derived-hint {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-top: 8px;
+  }
+  .result {
+    margin-top: 22px;
+    display: none;
+  }
+  .result.show { display: block; }
+  .result-box {
+    padding: 16px;
+    border-radius: 12px;
+    background: var(--accent-dim);
+    text-align: center;
+  }
+  .result-box + .result-box {
+    margin-top: 10px;
+  }
+  .result-box .label {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 4px;
+  }
+  .result-box .value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .error {
+    margin-top: 14px;
+    color: var(--danger);
+    font-size: 0.85rem;
+    text-align: center;
+    display: none;
+  }
+  .error.show { display: block; }
+  .save-btn {
+    display: block;
+    width: 100%;
+    margin-top: 12px;
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    border-radius: 10px;
+    padding: 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .save-btn:active {
+    background: var(--accent);
+    color: #fff;
+  }
+  .history {
+    margin-top: 24px;
+  }
+  .history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 4px 10px;
+  }
+  .history-header span {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-dim);
+  }
+  .clear-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    font-family: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+  }
+  .history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .history-item .summary {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .history-item .timestamp {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .history-item .delete-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 6px;
+  }
+  .history-empty {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    text-align: center;
+    padding: 12px 0;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Pace Calculator</h1>
+  <p class="subtitle">Solve for pace, time, distance, or weather impact</p>
+
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-solve="pace">Pace</div>
+    <div class="tab" data-solve="time">Time</div>
+    <div class="tab" data-solve="distance">Distance</div>
+    <div class="tab" data-solve="weather">Weather</div>
+  </div>
+
+  <div class="card">
+    <div id="calc-panel">
+      <div class="field" id="field-distance">
+        <label for="distance">Distance</label>
+        <input type="text" id="distance" inputmode="decimal" placeholder="e.g. 3.1">
+        <div class="pill-toggle" id="dist-unit-toggle">
+          <button class="pill-btn active" data-unit="mi">Miles</button>
+          <button class="pill-btn" data-unit="km">Kilometers</button>
+          <button class="pill-btn" data-unit="m">Meters</button>
+        </div>
+      </div>
+
+      <div class="field" id="field-time">
+        <label for="time">Time</label>
+        <input type="text" id="time" inputmode="numeric" placeholder="e.g. 24:30 or 1:05:00">
+        <div class="hint" id="hint-time">Format: mm:ss or h:mm:ss</div>
+      </div>
+
+      <div class="field" id="field-pace">
+        <label for="pace">Pace</label>
+        <input type="text" id="pace" inputmode="numeric" placeholder="e.g. 7:45">
+        <div class="hint" id="hint-pace">Minutes:seconds per mile</div>
+      </div>
+
+      <div class="result" id="result">
+        <div class="result-box">
+          <div class="label" id="result-mile-label">Pace per mile</div>
+          <div class="value" id="result-mile">--</div>
+        </div>
+        <div class="result-box" id="result-km-box">
+          <div class="label">Pace per km</div>
+          <div class="value" id="result-km">--</div>
+        </div>
+        <button class="save-btn" id="save-btn">+ Save to history</button>
+      </div>
+
+      <div class="error" id="error"></div>
+    </div>
+
+    <div id="weather-panel" style="display:none">
+      <p class="hint" style="margin-bottom:16px">Estimates how much heat and humidity will slow your pace, using a wet-bulb-globe-temperature model. Treat it as a ballpark, not a guarantee.</p>
+
+      <button class="save-btn" id="w-locate-btn" type="button" style="margin-top:0;margin-bottom:8px">📍 Use my location</button>
+      <div class="derived-hint" id="w-locate-status" style="text-align:center;margin-bottom:16px"></div>
+
+      <div class="field">
+        <label for="w-pace">Goal pace</label>
+        <input type="text" id="w-pace" inputmode="numeric" placeholder="e.g. 7:45">
+        <div class="hint">Minutes:seconds per mile, in ideal conditions</div>
+      </div>
+
+      <div class="field">
+        <label for="w-threshold">Threshold pace</label>
+        <input type="text" id="w-threshold" inputmode="numeric" placeholder="e.g. 6:50">
+        <div class="hint">Optional — your ~1hr race pace. The closer goal pace is to this, the more heat affects it.</div>
+        <div class="derived-hint" id="w-effort"></div>
+      </div>
+
+      <div class="field">
+        <label for="w-temp">Temperature</label>
+        <input type="text" id="w-temp" inputmode="decimal" placeholder="e.g. 82">
+        <div class="hint">Degrees Fahrenheit</div>
+      </div>
+
+      <div class="field">
+        <label id="w-second-label" for="w-second">Humidity</label>
+        <input type="text" id="w-second" inputmode="decimal" placeholder="e.g. 65">
+        <div class="hint" id="w-second-hint">Relative humidity (%)</div>
+        <div class="pill-toggle" id="w-mode-toggle">
+          <button class="pill-btn active" data-mode="humidity">I know humidity</button>
+          <button class="pill-btn" data-mode="dewpoint">I know dew point</button>
+        </div>
+        <div class="derived-hint" id="w-derived"></div>
+      </div>
+
+      <div class="heat-badge" id="w-badge">
+        <span class="dot" id="w-badge-dot"></span>
+        <span id="w-badge-text"></span>
+      </div>
+
+      <div class="result" id="w-result">
+        <div class="result-box">
+          <div class="label">Adjusted pace per mile</div>
+          <div class="value" id="w-result-mile">--</div>
+        </div>
+        <div class="result-box">
+          <div class="label">Adjusted pace per km</div>
+          <div class="value" id="w-result-km">--</div>
+        </div>
+        <button class="save-btn" id="w-save-btn">+ Save to history</button>
+      </div>
+
+      <div class="error" id="w-error"></div>
+    </div>
+  </div>
+
+  <div class="history">
+    <div class="history-header">
+      <span>History</span>
+      <button class="clear-btn" id="clear-history">Clear</button>
+    </div>
+    <div class="history-list" id="history-list"></div>
+    <div class="history-empty" id="history-empty">No calculations saved yet.</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var MI_IN_KM = 1.609344;
+  var MI_IN_M = 1609.344;
+
+  var state = { solve: 'pace', distUnit: 'mi', secondMode: 'humidity' };
+
+  var els = {
+    tabs: document.querySelectorAll('.tab'),
+    distance: document.getElementById('distance'),
+    time: document.getElementById('time'),
+    pace: document.getElementById('pace'),
+    calcPanel: document.getElementById('calc-panel'),
+    weatherPanel: document.getElementById('weather-panel'),
+    fieldDistance: document.getElementById('field-distance'),
+    fieldTime: document.getElementById('field-time'),
+    fieldPace: document.getElementById('field-pace'),
+    distUnitBtns: document.querySelectorAll('#dist-unit-toggle .pill-btn'),
+    result: document.getElementById('result'),
+    resultMileLabel: document.getElementById('result-mile-label'),
+    resultMile: document.getElementById('result-mile'),
+    resultKmBox: document.getElementById('result-km-box'),
+    resultKm: document.getElementById('result-km'),
+    error: document.getElementById('error'),
+    saveBtn: document.getElementById('save-btn'),
+    historyList: document.getElementById('history-list'),
+    historyEmpty: document.getElementById('history-empty'),
+    clearHistoryBtn: document.getElementById('clear-history'),
+    wPace: document.getElementById('w-pace'),
+    wThreshold: document.getElementById('w-threshold'),
+    wEffort: document.getElementById('w-effort'),
+    wTemp: document.getElementById('w-temp'),
+    wSecond: document.getElementById('w-second'),
+    wSecondLabel: document.getElementById('w-second-label'),
+    wSecondHint: document.getElementById('w-second-hint'),
+    wModeBtns: document.querySelectorAll('#w-mode-toggle .pill-btn'),
+    wDerived: document.getElementById('w-derived'),
+    wBadge: document.getElementById('w-badge'),
+    wBadgeDot: document.getElementById('w-badge-dot'),
+    wBadgeText: document.getElementById('w-badge-text'),
+    wResult: document.getElementById('w-result'),
+    wResultMile: document.getElementById('w-result-mile'),
+    wResultKm: document.getElementById('w-result-km'),
+    wSaveBtn: document.getElementById('w-save-btn'),
+    wError: document.getElementById('w-error'),
+    wLocateBtn: document.getElementById('w-locate-btn'),
+    wLocateStatus: document.getElementById('w-locate-status')
+  };
+
+  var HISTORY_KEY = 'paceCalcHistory';
+
+  function loadHistory() {
+    try {
+      var raw = JSON.parse(localStorage.getItem(HISTORY_KEY));
+      return Array.isArray(raw) ? raw : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveHistoryToStorage() {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  }
+
+  var history = loadHistory();
+
+  function unitAbbrev(unit) {
+    if (unit === 'mi') return 'mi';
+    if (unit === 'km') return 'km';
+    return 'm';
+  }
+
+  function buildSummary() {
+    if (state.solve === 'pace') {
+      return els.distance.value.trim() + ' ' + unitAbbrev(state.distUnit) + ' in ' + els.time.value.trim() +
+        '  →  ' + els.resultMile.textContent + '  ·  ' + els.resultKm.textContent;
+    } else if (state.solve === 'time') {
+      return els.distance.value.trim() + ' ' + unitAbbrev(state.distUnit) + ' @ ' + els.pace.value.trim() + '/mi' +
+        '  →  ' + els.resultMile.textContent;
+    } else if (state.solve === 'distance') {
+      return els.time.value.trim() + ' @ ' + els.pace.value.trim() + '/mi' +
+        '  →  ' + els.resultMile.textContent;
+    }
+    var secondUnit = state.secondMode === 'humidity' ? '%' : '°F';
+    var thresholdPart = els.wThreshold.value.trim() ? ' (threshold ' + els.wThreshold.value.trim() + '/mi)' : '';
+    return els.wPace.value.trim() + '/mi' + thresholdPart + ' @ ' + els.wTemp.value.trim() + '°F, ' + els.wSecond.value.trim() + secondUnit +
+      '  →  ' + els.wBadgeText.textContent + ': ' + els.wResultMile.textContent + ' · ' + els.wResultKm.textContent;
+  }
+
+  function renderHistory() {
+    els.historyList.innerHTML = '';
+    els.historyEmpty.style.display = history.length ? 'none' : 'block';
+    history.forEach(function (entry, idx) {
+      var item = document.createElement('div');
+      item.className = 'history-item';
+
+      var info = document.createElement('div');
+      var summary = document.createElement('div');
+      summary.className = 'summary';
+      summary.textContent = entry.summary;
+      var timestamp = document.createElement('div');
+      timestamp.className = 'timestamp';
+      timestamp.textContent = entry.timestamp;
+      info.appendChild(summary);
+      info.appendChild(timestamp);
+
+      var del = document.createElement('button');
+      del.className = 'delete-btn';
+      del.textContent = '×';
+      del.addEventListener('click', function () {
+        history.splice(idx, 1);
+        saveHistoryToStorage();
+        renderHistory();
+      });
+
+      item.appendChild(info);
+      item.appendChild(del);
+      els.historyList.appendChild(item);
+    });
+  }
+
+  function parseTimeToSeconds(str) {
+    str = str.trim();
+    if (!str) return null;
+    var parts = str.split(':').map(function (p) { return p.trim(); });
+    if (parts.some(function (p) { return p === '' || isNaN(Number(p)); })) return null;
+    var nums = parts.map(Number);
+    var seconds;
+    if (nums.length === 1) seconds = nums[0];
+    else if (nums.length === 2) seconds = nums[0] * 60 + nums[1];
+    else if (nums.length === 3) seconds = nums[0] * 3600 + nums[1] * 60 + nums[2];
+    else return null;
+    return seconds >= 0 ? seconds : null;
+  }
+
+  function formatSecondsAsClock(totalSeconds) {
+    totalSeconds = Math.round(totalSeconds);
+    var h = Math.floor(totalSeconds / 3600);
+    var m = Math.floor((totalSeconds % 3600) / 60);
+    var s = totalSeconds % 60;
+    if (h > 0) {
+      return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    }
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  function parseDistance(str) {
+    str = str.trim();
+    if (!str) return null;
+    var n = Number(str);
+    if (isNaN(n) || n <= 0) return null;
+    return n;
+  }
+
+  function distanceToMiles(value, unit) {
+    if (unit === 'mi') return value;
+    if (unit === 'km') return value / MI_IN_KM;
+    return value / MI_IN_M;
+  }
+
+  function milesToUnit(miles, unit) {
+    if (unit === 'mi') return miles.toFixed(2) + ' mi';
+    if (unit === 'km') return (miles * MI_IN_KM).toFixed(2) + ' km';
+    return Math.round(miles * MI_IN_M) + ' m';
+  }
+
+  function fToC(f) { return (f - 32) * 5 / 9; }
+  function cToF(c) { return c * 9 / 5 + 32; }
+
+  function dewPointFromRH(tempF, rh) {
+    var T = fToC(tempF), a = 17.625, b = 243.04;
+    var alpha = Math.log(rh / 100) + (a * T) / (b + T);
+    return cToF((b * alpha) / (a - alpha));
+  }
+
+  function rhFromDewPoint(tempF, dewF) {
+    var T = fToC(tempF), Td = fToC(dewF), a = 17.625, b = 243.04;
+    var rh = 100 * Math.exp((a * Td) / (b + Td) - (a * T) / (b + T));
+    return Math.min(100, Math.max(0, rh));
+  }
+
+  function wetBulbGlobeTempC(tempF, rh) {
+    var T = fToC(tempF);
+    var vaporPressure = (rh / 100) * 6.105 * Math.exp((17.27 * T) / (237.7 + T));
+    return 0.567 * T + 0.393 * vaporPressure + 3.94;
+  }
+
+  function slowdownPercentFromWbgt(wbgtC) {
+    var d = Math.max(0, wbgtC - 10);
+    return Math.min(20, 0.26 * d + 0.00465 * d * d);
+  }
+
+  function effortScaleFactor(thresholdSec, paceSec) {
+    var p = thresholdSec / paceSec;
+    return Math.min(3, Math.max(0.4, 1 + 1.72 * (p - 0.8)));
+  }
+
+  function severityFor(pct) {
+    if (pct <= 0.5) return { label: 'Minimal impact', color: '#4caf50' };
+    if (pct <= 3) return { label: 'Low impact', color: '#8bc34a' };
+    if (pct <= 6) return { label: 'Moderate impact', color: '#ffb300' };
+    if (pct <= 10) return { label: 'High impact', color: '#ff7043' };
+    return { label: 'Extreme impact', color: '#e53935' };
+  }
+
+  function showWeatherError(msg) {
+    els.wError.textContent = msg;
+    els.wError.classList.add('show');
+    els.wResult.classList.remove('show');
+    els.wBadge.classList.remove('show');
+  }
+
+  function calculateWeather() {
+    els.wError.classList.remove('show');
+    try {
+      var paceSecPerMile = parseTimeToSeconds(els.wPace.value);
+      var temp = parseFloat(els.wTemp.value);
+      var second = parseFloat(els.wSecond.value);
+      if (paceSecPerMile == null || isNaN(temp) || isNaN(second)) {
+        els.wResult.classList.remove('show');
+        els.wBadge.classList.remove('show');
+        return;
+      }
+
+      var rh, dew;
+      if (state.secondMode === 'humidity') {
+        if (second < 0 || second > 100) { showWeatherError('Humidity must be between 0 and 100%.'); return; }
+        rh = second;
+        dew = dewPointFromRH(temp, rh);
+        els.wDerived.textContent = '≈ Dew point: ' + Math.round(dew) + '°F';
+      } else {
+        dew = second;
+        if (dew > temp) { showWeatherError('Dew point can\'t be higher than temperature.'); return; }
+        rh = rhFromDewPoint(temp, dew);
+        els.wDerived.textContent = '≈ Humidity: ' + Math.round(rh) + '%';
+      }
+
+      var wbgtC = wetBulbGlobeTempC(temp, rh);
+      var pct = slowdownPercentFromWbgt(wbgtC);
+
+      var thresholdSec = parseTimeToSeconds(els.wThreshold.value);
+      if (thresholdSec != null) {
+        var scale = effortScaleFactor(thresholdSec, paceSecPerMile);
+        pct = Math.min(35, pct * scale);
+        els.wEffort.textContent = 'Goal pace is ' + Math.round((thresholdSec / paceSecPerMile) * 100) + '% of threshold effort';
+      } else {
+        els.wEffort.textContent = '';
+      }
+
+      var severity = severityFor(pct);
+
+      var adjustedPerMile = paceSecPerMile * (1 + pct / 100);
+      var adjustedPerKm = adjustedPerMile / MI_IN_KM;
+
+      els.wBadgeDot.style.background = severity.color;
+      els.wBadgeText.textContent = severity.label + ' (+' + pct.toFixed(1) + '%)';
+      els.wBadge.classList.add('show');
+
+      els.wResultMile.textContent = formatSecondsAsClock(adjustedPerMile) + ' /mi';
+      els.wResultKm.textContent = formatSecondsAsClock(adjustedPerKm) + ' /km';
+      els.wResult.classList.add('show');
+    } catch (e) {
+      showWeatherError('Could not calculate — check your inputs.');
+    }
+  }
+
+  function setSecondModeToHumidity() {
+    state.secondMode = 'humidity';
+    els.wModeBtns.forEach(function (b) { b.classList.toggle('active', b.dataset.mode === 'humidity'); });
+    els.wSecondLabel.textContent = 'Humidity';
+    els.wSecond.placeholder = 'e.g. 65';
+    els.wSecondHint.textContent = 'Relative humidity (%)';
+  }
+
+  function fetchLocalWeather() {
+    if (!navigator.geolocation) {
+      els.wLocateStatus.textContent = 'Geolocation isn\'t supported in this browser.';
+      return;
+    }
+    els.wLocateBtn.disabled = true;
+    els.wLocateStatus.textContent = 'Finding your location…';
+
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      var lat = pos.coords.latitude, lon = pos.coords.longitude;
+      els.wLocateStatus.textContent = 'Fetching current weather…';
+      var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
+        '&current=temperature_2m,relative_humidity_2m&temperature_unit=fahrenheit';
+
+      fetch(url).then(function (r) {
+        if (!r.ok) throw new Error('Weather request failed');
+        return r.json();
+      }).then(function (data) {
+        if (!data.current) throw new Error('No current weather in response');
+        setSecondModeToHumidity();
+        els.wTemp.value = Math.round(data.current.temperature_2m);
+        els.wSecond.value = Math.round(data.current.relative_humidity_2m);
+        els.wLocateStatus.textContent = 'Loaded current conditions for your location (' + lat.toFixed(1) + '°, ' + lon.toFixed(1) + '°).';
+        els.wLocateBtn.disabled = false;
+        calculateWeather();
+      }).catch(function () {
+        els.wLocateStatus.textContent = 'Could not fetch weather for your location — enter it manually below.';
+        els.wLocateBtn.disabled = false;
+      });
+    }, function (err) {
+      var msg = 'Could not get your location — enter conditions manually below.';
+      if (err && err.code === 1) msg = 'Location permission denied — enter conditions manually below.';
+      els.wLocateStatus.textContent = msg;
+      els.wLocateBtn.disabled = false;
+    }, { timeout: 10000 });
+  }
+
+  function updateVisibility() {
+    els.tabs.forEach(function (t) {
+      t.classList.toggle('active', t.dataset.solve === state.solve);
+    });
+    var isWeather = state.solve === 'weather';
+    els.calcPanel.style.display = isWeather ? 'none' : '';
+    els.weatherPanel.style.display = isWeather ? '' : 'none';
+    if (isWeather) {
+      calculateWeather();
+      return;
+    }
+    [els.fieldDistance, els.fieldTime, els.fieldPace].forEach(function (f) { f.style.display = ''; });
+    if (state.solve === 'pace') els.fieldPace.style.display = 'none';
+    if (state.solve === 'time') els.fieldTime.style.display = 'none';
+    if (state.solve === 'distance') els.fieldDistance.style.display = 'none';
+    calculate();
+  }
+
+  function showError(msg) {
+    els.error.textContent = msg;
+    els.error.classList.add('show');
+    els.result.classList.remove('show');
+  }
+
+  function clearError() {
+    els.error.classList.remove('show');
+  }
+
+  function calculate() {
+    clearError();
+    try {
+      if (state.solve === 'pace') {
+        var distRaw = parseDistance(els.distance.value);
+        var timeSec = parseTimeToSeconds(els.time.value);
+        if (distRaw == null || timeSec == null) { els.result.classList.remove('show'); return; }
+        var distMiles = distanceToMiles(distRaw, state.distUnit);
+        var paceSecPerMile = timeSec / distMiles;
+        var paceSecPerKm = paceSecPerMile / MI_IN_KM;
+        els.resultKmBox.style.display = '';
+        els.resultMileLabel.textContent = 'Pace per mile';
+        els.resultMile.textContent = formatSecondsAsClock(paceSecPerMile) + ' /mi';
+        els.resultKm.textContent = formatSecondsAsClock(paceSecPerKm) + ' /km';
+        els.result.classList.add('show');
+      } else if (state.solve === 'time') {
+        var distRaw2 = parseDistance(els.distance.value);
+        var paceSecPerMile2 = parseTimeToSeconds(els.pace.value);
+        if (distRaw2 == null || paceSecPerMile2 == null) { els.result.classList.remove('show'); return; }
+        var distMiles2 = distanceToMiles(distRaw2, state.distUnit);
+        var totalSec = distMiles2 * paceSecPerMile2;
+        els.resultKmBox.style.display = 'none';
+        els.resultMileLabel.textContent = 'Total time';
+        els.resultMile.textContent = formatSecondsAsClock(totalSec);
+        els.result.classList.add('show');
+      } else if (state.solve === 'distance') {
+        var timeSec3 = parseTimeToSeconds(els.time.value);
+        var paceSecPerMile3 = parseTimeToSeconds(els.pace.value);
+        if (timeSec3 == null || paceSecPerMile3 == null || paceSecPerMile3 === 0) { els.result.classList.remove('show'); return; }
+        var distMiles3 = timeSec3 / paceSecPerMile3;
+        els.resultKmBox.style.display = 'none';
+        els.resultMileLabel.textContent = 'Distance';
+        els.resultMile.textContent = milesToUnit(distMiles3, state.distUnit);
+        els.result.classList.add('show');
+      }
+    } catch (e) {
+      showError('Could not calculate — check your inputs.');
+    }
+  }
+
+  els.tabs.forEach(function (t) {
+    t.addEventListener('click', function () {
+      state.solve = t.dataset.solve;
+      updateVisibility();
+    });
+  });
+
+  els.distUnitBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      state.distUnit = b.dataset.unit;
+      els.distUnitBtns.forEach(function (x) { x.classList.toggle('active', x === b); });
+      calculate();
+    });
+  });
+
+  [els.distance, els.time, els.pace].forEach(function (input) {
+    input.addEventListener('input', calculate);
+  });
+
+  els.saveBtn.addEventListener('click', function () {
+    history.unshift({ summary: buildSummary(), timestamp: new Date().toLocaleString() });
+    if (history.length > 25) history.length = 25;
+    saveHistoryToStorage();
+    renderHistory();
+  });
+
+  els.clearHistoryBtn.addEventListener('click', function () {
+    history = [];
+    saveHistoryToStorage();
+    renderHistory();
+  });
+
+  els.wModeBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      state.secondMode = b.dataset.mode;
+      els.wModeBtns.forEach(function (x) { x.classList.toggle('active', x === b); });
+      els.wSecondLabel.textContent = state.secondMode === 'humidity' ? 'Humidity' : 'Dew point';
+      els.wSecond.placeholder = state.secondMode === 'humidity' ? 'e.g. 65' : 'e.g. 68';
+      els.wSecondHint.textContent = state.secondMode === 'humidity' ? 'Relative humidity (%)' : 'Degrees Fahrenheit';
+      els.wSecond.value = '';
+      els.wDerived.textContent = '';
+      calculateWeather();
+    });
+  });
+
+  [els.wPace, els.wThreshold, els.wTemp, els.wSecond].forEach(function (input) {
+    input.addEventListener('input', calculateWeather);
+  });
+
+  els.wSaveBtn.addEventListener('click', function () {
+    history.unshift({ summary: buildSummary(), timestamp: new Date().toLocaleString() });
+    if (history.length > 25) history.length = 25;
+    saveHistoryToStorage();
+    renderHistory();
+  });
+
+  els.wLocateBtn.addEventListener('click', fetchLocalWeather);
+
+  updateVisibility();
+  renderHistory();
+})();
+</script>
+</body>
+</html>
