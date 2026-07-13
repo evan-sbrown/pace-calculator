@@ -1008,7 +1008,8 @@
   };
 
   var QUANTITY_RE = /(\d+(?:\.\d+)?)\s*(hours|hour|hrs|hr|h|minutes|minute|mins|min|seconds|second|secs|sec|s|kilometers|kilometer|km|miles|mile|mi|meters|meter|metres|metre|m)\b/i;
-  var PACE_RE = /(\d{1,2}):(\d{2})\s*(?:\/|\bper\b)?\s*(km|kilometers?|mi|miles?)?\s*(?:pace)?/i;
+  var PACE_WITH_MARKER_RE = /(\d{1,2}):(\d{2})\s*(?:\/\s*(km|kilometers?|mi|miles?)|\bper\s+(km|kilometers?|mi|miles?)\b|\s*(pace))/i;
+  var BARE_TIME_RE = /(\d{1,2}):(\d{2})/;
   var EFFORT_RE = /\b(recovery|jog|easy|steady|tempo|threshold|hard|fast)\b/i;
 
   function extractQuantity(text) {
@@ -1017,25 +1018,42 @@
     var value = parseFloat(m[1]);
     var unit = m[2].toLowerCase();
     if (UNIT_TO_SECONDS.hasOwnProperty(unit)) return { durationSec: value * UNIT_TO_SECONDS[unit] };
-    if (UNIT_TO_METERS.hasOwnProperty(unit)) return { distanceM: value * UNIT_TO_METERS[unit] };
+    if (UNIT_TO_METERS.hasOwnProperty(unit)) return { distanceM: value * UNIT_TO_METERS[unit], unitFamily: /^mi/.test(unit) ? 'imperial' : 'metric' };
     return null;
   }
 
-  function extractTarget(text) {
-    var m = PACE_RE.exec(text);
+  // A bare number with no unit at all (e.g. "400" in "8x 400 @ 1:10") is treated as
+  // meters — the near-universal convention for unitless track-repeat distances.
+  function extractBareNumberAsMeters(text) {
+    var m = /(\d+(?:\.\d+)?)/.exec(text);
+    if (!m) return null;
+    return { distanceM: parseFloat(m[1]), unitFamily: 'metric' };
+  }
+
+  // Returns { kind: 'explicitPace'|'bareTime'|'percent'|'none', ..., cleaned }.
+  // A bare "mm:ss" with no unit/pace marker is ambiguous until we know whether the
+  // clause also names a distance — resolved in parseSingleStep, since e.g. "400 @ 1:10"
+  // means "run this 400 in 1:10" (a goal time to convert to pace), not "1:10 pace".
+  function extractTargetRaw(text) {
+    var m = PACE_WITH_MARKER_RE.exec(text);
     if (m) {
-      var paceSec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-      var unit = /^km|^kilometer/i.test(m[3] || '') ? 'km' : 'mi';
+      var unitRaw = (m[3] || m[4] || '').toLowerCase();
+      var unit = /^km|^kilometer/.test(unitRaw) ? 'km' : 'mi';
       var cleaned = text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length);
-      return { target: { kind: 'pace', paceSec: paceSec, unit: unit }, cleaned: cleaned };
+      return { kind: 'explicitPace', paceSec: parseInt(m[1], 10) * 60 + parseInt(m[2], 10), unit: unit, cleaned: cleaned };
+    }
+    var bt = BARE_TIME_RE.exec(text);
+    if (bt) {
+      var cleanedBt = text.slice(0, bt.index) + ' ' + text.slice(bt.index + bt[0].length);
+      return { kind: 'bareTime', sec: parseInt(bt[1], 10) * 60 + parseInt(bt[2], 10), cleaned: cleanedBt };
     }
     var e = EFFORT_RE.exec(text);
     if (e) {
       var range = EFFORT_RANGES[e[1].toLowerCase()];
-      var cleaned2 = text.slice(0, e.index) + ' ' + text.slice(e.index + e[0].length);
-      return { target: { kind: 'percent', min: range[0], max: range[1] }, cleaned: cleaned2 };
+      var cleanedE = text.slice(0, e.index) + ' ' + text.slice(e.index + e[0].length);
+      return { kind: 'percent', min: range[0], max: range[1], cleaned: cleanedE };
     }
-    return { target: null, cleaned: text };
+    return { kind: 'none', cleaned: text };
   }
 
   function parseTargetText(text) {
@@ -1052,9 +1070,28 @@
   }
 
   function parseSingleStep(text, defaultEffort) {
-    var extracted = extractTarget(text);
-    var quantity = extractQuantity(extracted.cleaned);
-    var target = extracted.target || { kind: 'percent', min: EFFORT_RANGES[defaultEffort][0], max: EFFORT_RANGES[defaultEffort][1] };
+    var raw = extractTargetRaw(text);
+    var quantity = extractQuantity(raw.cleaned) || extractBareNumberAsMeters(raw.cleaned);
+
+    var target;
+    if (raw.kind === 'explicitPace') {
+      target = { kind: 'pace', paceSec: raw.paceSec, unit: raw.unit };
+    } else if (raw.kind === 'bareTime') {
+      if (quantity && quantity.distanceM != null) {
+        // Convert "goal time for this distance" into an equivalent pace.
+        var unit = quantity.unitFamily === 'imperial' ? 'mi' : 'km';
+        var distInUnit = quantity.distanceM / (unit === 'km' ? 1000 : 1609.344);
+        target = { kind: 'pace', paceSec: Math.round(raw.sec / distInUnit), unit: unit };
+      } else {
+        // No distance to convert against (e.g. a duration-based step) — treat as a direct pace.
+        target = { kind: 'pace', paceSec: raw.sec, unit: 'mi' };
+      }
+    } else if (raw.kind === 'percent') {
+      target = { kind: 'percent', min: raw.min, max: raw.max };
+    } else {
+      target = { kind: 'percent', min: EFFORT_RANGES[defaultEffort][0], max: EFFORT_RANGES[defaultEffort][1] };
+    }
+
     return { quantity: quantity, target: target };
   }
 
@@ -1114,7 +1151,11 @@
     return (m > 0 ? m + 'm' : '') + s + 's';
   }
 
-  function formatDistanceForSyntax(meters) {
+  function formatDistanceForSyntax(meters, unitFamily) {
+    if (unitFamily === 'imperial') {
+      var mi = meters / 1609.344;
+      return (Math.abs(mi - Math.round(mi)) < 0.005 ? Math.round(mi) : mi.toFixed(2)) + 'mi';
+    }
     meters = Math.round(meters);
     if (meters < 1000) return meters + 'mtr';
     return (meters % 1000 === 0 ? (meters / 1000) : (meters / 1000).toFixed(2)) + 'km';
@@ -1122,7 +1163,7 @@
 
   function quantityForSyntax(quantity) {
     if (quantity.durationSec != null) return formatDurationForSyntax(quantity.durationSec);
-    return formatDistanceForSyntax(quantity.distanceM);
+    return formatDistanceForSyntax(quantity.distanceM, quantity.unitFamily);
   }
 
   function formatTargetForSyntax(target) {
@@ -1158,6 +1199,10 @@
       return (sec % 60 === 0) ? (sec / 60) + ' min' : sec + ' sec';
     }
     var meters = quantity.distanceM;
+    if (quantity.unitFamily === 'imperial') {
+      var mi = meters / 1609.344;
+      return (Math.abs(mi - Math.round(mi)) < 0.005 ? Math.round(mi) : mi.toFixed(2)) + ' mi';
+    }
     return meters >= 1000 ? (meters / 1000) + ' km' : Math.round(meters) + ' m';
   }
 
