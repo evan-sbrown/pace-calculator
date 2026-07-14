@@ -1338,21 +1338,32 @@
     return target.min + '-' + target.max + '% Pace';
   }
 
-  function stepLineForSyntax(parsedStep) {
+  // Garmin infers a step's FIT intensity type (Active/Recovery/Rest/etc.) from
+  // intervals.icu's sync, and apparently defaults recovery-ish steps to "Run"/Active
+  // rather than Recovery. intervals.icu's syntax supports an explicit "intensity="
+  // tag per step (confirmed by an intervals.icu moderator) that maps directly to the
+  // FIT step-type field, so we tag it ourselves instead of relying on inference.
+  function stepLineForSyntax(parsedStep, intensityTag) {
     var targetText = formatTargetForSyntax(parsedStep.target);
-    return '- ' + quantityForSyntax(parsedStep.quantity) + (targetText ? ' ' + targetText : '');
+    var line = '- ' + quantityForSyntax(parsedStep.quantity) + (targetText ? ' ' + targetText : '');
+    if (intensityTag) line += ' intensity=' + intensityTag;
+    return line;
+  }
+
+  function isRecoveryLikeText(text) {
+    return /\b(recovery|jog|rest)\b/i.test(text || '');
   }
 
   function renderWorkoutSyntax(steps) {
     var sections = steps.map(function (step) {
-      if (step.type === 'warmup') return 'Warmup\n' + stepLineForSyntax(step);
-      if (step.type === 'cooldown') return 'Cooldown\n' + stepLineForSyntax(step);
+      if (step.type === 'warmup') return 'Warmup\n' + stepLineForSyntax(step, 'warmup');
+      if (step.type === 'cooldown') return 'Cooldown\n' + stepLineForSyntax(step, 'cooldown');
       if (step.type === 'repeat') {
-        var lines = [step.reps + 'x', stepLineForSyntax(step.work)];
-        if (step.recovery) lines.push(stepLineForSyntax(step.recovery));
+        var lines = [step.reps + 'x', stepLineForSyntax(step.work, null)];
+        if (step.recovery) lines.push(stepLineForSyntax(step.recovery, 'recovery'));
         return lines.join('\n');
       }
-      return stepLineForSyntax(step);
+      return stepLineForSyntax(step, isRecoveryLikeText(step.rawText) ? 'recovery' : null);
     });
     return sections.join('\n\n');
   }
