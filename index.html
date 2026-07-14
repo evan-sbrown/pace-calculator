@@ -1101,6 +1101,15 @@
   function parseTargetText(text) {
     text = text.trim();
     if (!text || /^(open|none|free)$/i.test(text)) return { kind: 'open' };
+    var paceRange = /^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*\/?\s*(km|mi)?/i.exec(text);
+    if (paceRange) {
+      return {
+        kind: 'pace',
+        paceSec: parseInt(paceRange[1], 10) * 60 + parseInt(paceRange[2], 10),
+        paceSecMax: parseInt(paceRange[3], 10) * 60 + parseInt(paceRange[4], 10),
+        unit: (paceRange[5] || 'mi').toLowerCase()
+      };
+    }
     var pace = /^(\d{1,2}):(\d{2})\s*\/?\s*(km|mi)?/i.exec(text);
     if (pace) return { kind: 'pace', paceSec: parseInt(pace[1], 10) * 60 + parseInt(pace[2], 10), unit: (pace[3] || 'mi').toLowerCase() };
     var pct = /(\d+)\s*-\s*(\d+)\s*%/.exec(text);
@@ -1218,6 +1227,71 @@
     return merged;
   }
 
+  // Garmin's sync of intervals.icu workouts breaks (silently drops ALL targets,
+  // showing "open" on the watch) when a workout mixes target kinds — some steps
+  // with an absolute pace, others with a %-of-threshold pace, others with none at
+  // all. Confirmed by hands-on testing: a workout using one consistent kind
+  // throughout synced correctly; the previous mixed version did not. So every
+  // step's target is normalized to a single kind before rendering: if any step in
+  // the workout has an explicit absolute pace, everything else (opens and percent
+  // bands) is converted to an absolute pace too, scaled off the fastest explicit
+  // pace present as a stand-in reference; otherwise everything falls back to a
+  // uniform %-of-threshold-pace representation instead.
+  var OPEN_BAND = [55, 70];
+
+  function formatPaceValue(sec) {
+    var m = Math.floor(sec / 60), s = sec % 60;
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  function paceRangeFromPercent(minPct, maxPct, referencePaceSec) {
+    var fast = Math.round(referencePaceSec / (maxPct / 100));
+    var slow = Math.round(referencePaceSec / (minPct / 100));
+    return { kind: 'pace', paceSec: fast, paceSecMax: slow, unit: 'mi' };
+  }
+
+  function resolveTarget(target, referencePaceSec) {
+    if (target.kind === 'pace') return target;
+    var band = (target.kind === 'open') ? OPEN_BAND : [target.min, target.max];
+    if (referencePaceSec != null) return paceRangeFromPercent(band[0], band[1], referencePaceSec);
+    return { kind: 'percent', min: band[0], max: band[1] };
+  }
+
+  function normalizeTargetTypes(steps) {
+    // Prefer a reference pace from an actual work interval (repeat work halves, or a
+    // plain step that isn't warmup/cooldown) — a recovery/warmup/cooldown pace
+    // shouldn't set the bar that tempo/hard % bands get scaled against. Only fall
+    // back to any explicit pace at all if no work-tier one exists.
+    var workTierPaces = [];
+    var anyPaces = [];
+    steps.forEach(function (step) {
+      if (step.type === 'repeat') {
+        if (step.work && step.work.target && step.work.target.kind === 'pace') {
+          workTierPaces.push(step.work.target.paceSec);
+          anyPaces.push(step.work.target.paceSec);
+        }
+        if (step.recovery && step.recovery.target && step.recovery.target.kind === 'pace') {
+          anyPaces.push(step.recovery.target.paceSec);
+        }
+      } else if (step.target && step.target.kind === 'pace') {
+        anyPaces.push(step.target.paceSec);
+        if (step.type !== 'warmup' && step.type !== 'cooldown') workTierPaces.push(step.target.paceSec);
+      }
+    });
+    var referencePaceSec = workTierPaces.length ? Math.min.apply(null, workTierPaces)
+      : (anyPaces.length ? Math.min.apply(null, anyPaces) : null);
+
+    steps.forEach(function (step) {
+      if (step.type === 'repeat') {
+        if (step.work) step.work.target = resolveTarget(step.work.target, referencePaceSec);
+        if (step.recovery) step.recovery.target = resolveTarget(step.recovery.target, referencePaceSec);
+      } else {
+        step.target = resolveTarget(step.target, referencePaceSec);
+      }
+    });
+    return steps;
+  }
+
   function parseWorkoutText(text) {
     var clauses = tokenizeWorkoutText(text);
     var steps = [];
@@ -1229,7 +1303,7 @@
       result.rawText = raw;
       steps.push(result);
     });
-    return { steps: mergeInterRepRecovery(steps), warnings: warnings };
+    return { steps: normalizeTargetTypes(mergeInterRepRecovery(steps)), warnings: warnings };
   }
 
   function formatDurationForSyntax(sec) {
@@ -1255,10 +1329,11 @@
   }
 
   function formatTargetForSyntax(target) {
-    if (target.kind === 'open') return '';
+    if (target.kind === 'open') return ''; // shouldn't occur post-normalization; defensive only
     if (target.kind === 'pace') {
-      var m = Math.floor(target.paceSec / 60), s = target.paceSec % 60;
-      return m + ':' + String(s).padStart(2, '0') + '/' + target.unit + ' Pace';
+      var text = formatPaceValue(target.paceSec);
+      if (target.paceSecMax != null) text += '-' + formatPaceValue(target.paceSecMax);
+      return text + '/' + target.unit + ' Pace';
     }
     return target.min + '-' + target.max + '% Pace';
   }
@@ -1297,10 +1372,11 @@
   }
 
   function targetToInputText(target) {
-    if (target.kind === 'open') return 'Open';
+    if (target.kind === 'open') return 'Open'; // shouldn't occur post-normalization; defensive only
     if (target.kind === 'pace') {
-      var m = Math.floor(target.paceSec / 60), s = target.paceSec % 60;
-      return m + ':' + String(s).padStart(2, '0') + '/' + target.unit;
+      var text = formatPaceValue(target.paceSec);
+      if (target.paceSecMax != null) text += '-' + formatPaceValue(target.paceSecMax);
+      return text + '/' + target.unit;
     }
     return target.min + '-' + target.max + '%';
   }
