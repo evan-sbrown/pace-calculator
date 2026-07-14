@@ -1313,20 +1313,19 @@
     return (m > 0 ? m + 'm' : '') + s + 's';
   }
 
-  // intervals.icu needs every step to carry an elapsed-time duration to compute
-  // training load — a distance-only step (e.g. "800mtr") can leave load (and,
-  // per hands-on testing, the pace target itself) not coming through correctly.
-  // So every step in the SENT syntax is expressed as a duration; distance-based
-  // steps get an estimated duration computed from their resolved pace target (or
-  // FALLBACK_PACE_SEC_PER_KM if no absolute pace exists). The app's own UI still
-  // shows/edits the original distance — only the generated text changes. Real
-  // tradeoff: the watch will end these reps by estimated time elapsed rather than
-  // by GPS distance reached.
-  var FALLBACK_PACE_SEC_PER_KM = 360; // 6:00/km
+  function formatDistanceForSyntax(meters, unitFamily) {
+    if (unitFamily === 'imperial') {
+      var mi = meters / 1609.344;
+      return (Math.abs(mi - Math.round(mi)) < 0.005 ? Math.round(mi) : mi.toFixed(2)) + 'mi';
+    }
+    meters = Math.round(meters);
+    if (meters < 1000) return meters + 'mtr';
+    return (meters % 1000 === 0 ? (meters / 1000) : (meters / 1000).toFixed(2)) + 'km';
+  }
 
-  function quantityForSyntax(quantity, target) {
+  function quantityForSyntax(quantity) {
     if (quantity.durationSec != null) return formatDurationForSyntax(quantity.durationSec);
-    return formatDurationForSyntax(stepDurationSec({ quantity: quantity, target: target }, FALLBACK_PACE_SEC_PER_KM));
+    return formatDistanceForSyntax(quantity.distanceM, quantity.unitFamily);
   }
 
   function formatTargetForSyntax(target) {
@@ -1341,7 +1340,7 @@
 
   function stepLineForSyntax(parsedStep) {
     var targetText = formatTargetForSyntax(parsedStep.target);
-    return '- ' + quantityForSyntax(parsedStep.quantity, parsedStep.target) + (targetText ? ' ' + targetText : '');
+    return '- ' + quantityForSyntax(parsedStep.quantity) + (targetText ? ' ' + targetText : '');
   }
 
   function renderWorkoutSyntax(steps) {
@@ -1555,13 +1554,14 @@
   }
 
   function estimateMovingTime(steps) {
+    var fallbackPaceSecPerKm = 360;
     var total = 0;
     steps.forEach(function (step) {
       if (step.type === 'repeat') {
-        var perRep = stepDurationSec(step.work, FALLBACK_PACE_SEC_PER_KM) + (step.recovery ? stepDurationSec(step.recovery, FALLBACK_PACE_SEC_PER_KM) : 0);
+        var perRep = stepDurationSec(step.work, fallbackPaceSecPerKm) + (step.recovery ? stepDurationSec(step.recovery, fallbackPaceSecPerKm) : 0);
         total += perRep * step.reps;
       } else {
-        total += stepDurationSec(step, FALLBACK_PACE_SEC_PER_KM);
+        total += stepDurationSec(step, fallbackPaceSecPerKm);
       }
     });
     return Math.round(total);
